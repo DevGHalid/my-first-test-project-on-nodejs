@@ -31,14 +31,13 @@ function facade() {
 
 
 //----
-
 function createSchemaElement() {
   let count = 0;
-  const bufferHouse = [];
-  const KEY_OBSERVE_STATE = Symbol('#observe_state');
-  const DIRECTIVE = Symbol('#directive');
-  const NODE_ELEMENT = '#elem';
-  const NODE_TEXT = '#text';
+  let bufferHouse = [];
+  const OBSERVE_STATE = Symbol("#observe_state");
+  const DIRECTIVE = Symbol("#directive");
+  const NODE_ELEMENT = "#elem";
+  const NODE_TEXT = "#text";
 
   function createElement(tagName, attr, children = []) {
     const node = {
@@ -92,93 +91,91 @@ function createSchemaElement() {
 
   // create node
   function createNode(node) {
-    if (typeof node === 'string') {
+    // create text node
+    if (typeof node === "string") {
       return document.createTextNode(node);
-    } else if (node.hasOwnProperty('nodeName') && node.nodeName === NODE_TEXT) {
+    } else if (node.hasOwnProperty("nodeName") && node.nodeName === NODE_TEXT) {
       const txt = node.children
-        .map(item => (item.type === KEY_OBSERVE_STATE ? item.value : item))
-        .join('');
+        .map(item => (item.type === OBSERVE_STATE ? item.value : item))
+        .join("");
 
       return document.createTextNode(txt);
     }
-    const parent = document.createElement(node.tagName);
+
+    // create node element
+    const el = document.createElement(node.tagName);
 
     if (node.children) {
       node.children.forEach(item => {
+        // create children to node
         const currentNode = createNode(item);
-        parent.appendChild(currentNode);
+        el.appendChild(currentNode);
 
-        if (item.hasOwnProperty('__node')) {
+        if (item.hasOwnProperty("__node")) {
           item.__node = currentNode;
         }
       });
     }
-    return parent;
+    return el;
   }
 
+  // global options
   const globalOptions = {
     $state: {}
   };
 
   const listIf = [];
-  function setIf(callback) {
-    if (typeof callback === 'function') {
-      const house = callback();
-      const index = (count = count + 1);
-
-      const handler = () => {
-        count--;
-        return callback();
-      };
-
-      const node = {
-        _id: index,
-        tagName: 'div',
-        nodeName: DIRECTIVE,
-        children: house,
-        options: { handler }
-      };
-      listIf.push(node);
-      bufferHouse.push(node);
-
-      return node;
+  function $if(callback) {
+    if (typeof callback === "function") {
+      const beginDom = callback();
+      listIf.push({ beginDom, handler: callback });
+      return beginDom;
     }
   }
 
-  function setObserveState(state) {
+  // observable state
+  function observable(state) {
     if (state instanceof Object) {
       return Object.assign(globalOptions, makeObserve(state));
     }
   }
 
+  // make observe
   function makeObserve(data) {
+    // signals for subscribe
     const signals = [];
 
     function subscribeAll(handelSignal) {
-      if (typeof handelSignal === 'function') {
+      if (typeof handelSignal === "function") {
         signals.push(handelSignal);
       }
     }
 
     function notify(key, value) {
       if (signals.length > 0) {
+        // apply all signals which be subscribe
         signals.forEach(handelSignal => handelSignal(key, value));
       }
     }
 
+    // make reactive
     function makeReactive(key) {
+      // state
       const currentData = {
-        value: data[key],
         _id: [],
-        type: KEY_OBSERVE_STATE
+        type: OBSERVE_STATE,
+        value: data[key]
       };
 
       Object.defineProperty(data, key, {
         get() {
+          // get state
           return currentData;
         },
         set({ value }) {
+          // set state
           currentData.value = value;
+          // update render
           updateRender(currentData._id, currentData.value);
           notify(key, currentData);
         }
@@ -186,70 +183,64 @@ function createSchemaElement() {
     }
 
     for (let key in data) {
+      // make all property reactive
       makeReactive(key);
     }
 
     return { subscribeAll, $state: data };
   }
 
-  function updateElement(newNode, oldNode) {
+  // update node
+  function updateNode(newNode, oldNode) {
     const [newLength, oldLength] = [newNode.length, oldNode.length];
     for (let i = 0; i < newLength || i < oldLength; i++) {
       const [itemNewNode, itemOldNode] = [newNode[i], oldNode[i]];
-      if (itemNewNode) {
-        if (itemNewNode.nodeName != itemOldNode.nodeName) {
-          itemNewNode.__node = createNode(itemNewNode);
-          itemOldNode.__node.parentNode.replaceChild(
-            itemNewNode.__node,
-            itemOldNode.__node
-          );
-        }
-      }
     }
   }
 
+  // update render
   function updateRender(listIndex, newValue) {
-    if (listIf.length > 0) {
-      listIf.forEach(item => {
-        const newHouse = item.options.handler();
-        // updateElement(newHouse, item.children);
-
-        // item.children = newHouse;
-      });
-    }
-
-    if (listIndex.length > 0) {
-      listIndex.forEach(index => {
-        const currentNode = findElement(index);
-        const { __node } = currentNode;
-        if (__node !== null) {
-          __node.textContent = newValue;
-        }
-      });
-    }
+    listIndex.forEach(index => {
+      const currentNode = findElement(index);
+      const { __node } = currentNode;
+      if (__node !== null) {
+        __node.textContent = newValue;
+      }
+    });
   }
 
   const listMounted = [];
+  // mounted
   function mounted(callback) {
-    if (typeof callback === 'function') {
+    if (typeof callback === "function") {
       listMounted.push(callback);
     }
   }
 
+  // get length only node
   function getLengthOnlyNode(node) {
-    let i = 0;
-    function setConter() {
-      i++;
+    node = Array.isArray(node) ? node : [node];
+    let count = 0;
+    return (function setConter(items) {
+      if (Array.isArray(items)) {
+        let i = 0;
+        while (items[i]) {
+          const item = items[i];
 
-      if (node.children) {
+          if (item instanceof Object) {
+            setConter(item.children);
+            count += 1;
+          }
+
+          i += 1;
+        }
+        return count;
       }
-    }
+      return 0;
+    })(node);
   }
 
-  getLengthOnlyNode(
-    createElement('h1', null, ['index ', createElement('h1', null, ['index '])])
-  );
-
+  // render
   function render(callback, root = null) {
     const handlerRender = callback.bind(null, globalOptions);
     const beginHouse = handlerRender();
@@ -271,9 +262,9 @@ function createSchemaElement() {
     createElement,
     createNode,
     findElement,
-    setObserveState,
+    observable,
     mounted,
-    setIf
+    $if
   };
 }
 const {
@@ -282,12 +273,14 @@ const {
   findElement,
   createNode,
   render,
-  setObserveState,
+  observable,
   mounted,
-  setIf
+  $if
 } = createSchemaElement();
 
-const { subscribeAll, $state } = setObserveState({
+// ---------------------- test ----------------------------
+
+const { subscribeAll, $state } = observable({
   age: 12
 });
 
@@ -301,21 +294,26 @@ mounted(observe => {
 });
 
 render(observe => {
-  return createElement('div', null, [
-    createElement('h1', null, ['index ']),
-    createElement('h1', null, ['index ']),
-    createElement('h1', null, ['index ']),
-    setIf(() => {
-      return [
-        observe.$state.age.value > 2
-          ? createElement('h1', null, [
-              'index',
-              createElement('div', null, ['Renderings'])
-            ])
-          : createText('test')
-      ];
-    }),
+  return createElement("div", null, [
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    createElement("h1", null, ["index "]),
+    $if(() =>
+      observe.$state.age.value == 2
+        ? createElement("h1", null, [
+            "Yes :) !!!",
+            createElement("div", null, ["test yes"])
+          ])
+        : createElement("h2", null, [
+            "Not :( !!!",
+            createElement("div", null, ["test not"])
+          ])
+    ),
     createText(observe.$state.age),
-    createElement('h1', null, ['index '])
+    createElement("h1", null, ["index "])
   ]);
-}, document.getElementById('app'));
+}, document.getElementById("app"));
